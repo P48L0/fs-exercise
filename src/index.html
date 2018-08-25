@@ -1,0 +1,483 @@
+<html>
+    <head> 
+        <style> 
+
+            body { padding:50px; font-family:Arial, Helvetica, sans-serif; }
+
+            /** Loading semti-trnsparent div */
+            .ldr { display:none } 
+            .loading > .ldr {
+                position            : fixed;
+                display             : block; 
+                z-index             : 10;
+                background-color    : rgba(255,255,255,0.5);
+                top:0px; left:0px; width:100%; height:100%;
+            }
+
+            /** Drag Icon */ 
+            .dragHandle { cursor: move; padding:0px 10px; } 
+             
+            /** "undo" button initialli hidden */
+            li ._undo                       { display:none; }
+
+            /** "deleted" state hides some UI */
+            li.deleted, li.deleted input    { text-decoration: line-through; }
+            li.deleted ._undo               { display:inline-block; }
+            li.deleted .dragHandle, 
+            li.deleted ._delete, 
+            li.deleted input[type='file']   { display:none; }
+
+            /** Error message shown below each item */ 
+            .error {  
+                padding         : 5px; 
+                padding-bottom  : 20px; 
+                font-size       : 0.8em;
+                font-weight     : bold; 
+                color           :red; 
+            }
+
+        </style> 
+        <title>Pablo's Job Exam</title> 
+    </head>
+
+    <body class='loading'>
+
+        <div class='ldr'></div> 
+        <ul id="sortable">
+            <li>Initializing...</li>
+        </ul>
+   
+        <h4>Total items: <b id='totalItems'>0</b></h4>
+       
+        <button onclick="addNewItem()">+ Add new item</button> 
+        <button onclick="save()">Save Changes</button>  
+
+
+        <!-- core dependencies loaded from CDN  -->
+        <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+        <!-- Application -->
+        <script>   
+
+            //
+            // Initializing the "sortable" plugin to allow drag and drop functionality
+            //
+            var $sortable   = $( "#sortable" ).sortable({ handle: ".dragHandle" }); 
+
+            //
+            // here i will store the config from the server.
+            //
+            var $config     = null;   
+            
+            //
+            // when something changes, update the total item conter.
+            //
+            $sortable.on("listChanged", function()
+            {
+                $("#totalItems").text( $(this).find("> li:not(.deleted)").length ); // all items NOT deleted
+            })
+
+            /**
+             * Utility function for calling server's methods
+             */
+            function apiCall(url, payload, callback)
+            {
+                $.ajax({
+                    url             : url
+                    , data          : payload && JSON.stringify(payload)
+                    , contentType   : 'application/json'
+                    , type          : payload? 'POST' : 'GET'
+                }).then( function(res)
+                { 
+                    if( res.error ) 
+                        return callback("API ERROR: "+ res.error.toString() );
+
+                    callback( null, res )
+
+                }, function(res){
+                    callback( "REQUEST ERROR: "+ res.status+": "+res.statusText );
+                });
+            }
+
+
+            /**
+             * Handles de UI of *one* item in the list
+             * returns a jQuery like object wrapping the item's UI.
+             */
+            function ItemHandler( itm )
+            {
+                var div = $("<li>\
+                                <button class='_undo'>↶</button>\
+                                <b class='dragHandle'>⇳</b>\
+                                <button class='_delete'>X</button> \
+                                <input placeholder='Description...' class='_desc' type='text' value='hola 123' size='20'/>\
+                                <a href='#' target='_blank'>imagen.jpg</a> \
+                                <input class='_file' type='file' />\
+                                <div class='error'></div>\
+                            </li>"); 
+
+                var pic         = div.find("a");
+                var desc        = div.find("._desc");
+                var file        = div.find("._file");
+                var errorMsg    = div.find(".error").hide();
+
+
+                //
+                // Store the item's data in the UI so we can later access the data
+                // using the DOM elements and obtain that way their current order.
+                //
+                div[0].data        = itm;   
+
+
+                //
+                // pull data for the "itm" to the UI
+                //
+                function _sync()
+                {
+                    pic.text( itm.image || "");
+                    pic.attr("href", itm.image );
+                    desc.val( itm.description || ""); 
+                }
+
+                function _showError(str)
+                {
+                    if( !str )
+                    {
+                        errorMsg.hide();
+                        return;
+                    }
+                    errorMsg.text( " Oops! → " + str ).show();
+                } 
+
+                /**
+                 * Verify the extension and size of "file" based on rules set by "cfg"
+                 * Before sending them to the server.
+                 */ 
+                function __validateFile( file, cfg )
+                {
+                    var task    = $.Deferred();
+                    var type    = file.name.split(".").pop();
+                    var promise = task.promise();
+
+                    //
+                    // Wrong type...
+                    //
+                    if( cfg.types.indexOf( type )<0 )
+                    {  
+                        task.reject("Image is of the wrong type, accepted types are: "+cfg.types+". Current file type: "+type );
+                        return promise;
+                    }
+
+                    //
+                    // Now load image to get size information before sending it to the server...
+                    //
+                    var fr      = new FileReader;
+
+                    fr.onload = function() { // file is loaded
+                        var img = new Image;
+
+                        img.onload = function() 
+                        {
+                            if( (img.width != cfg.width) || (img.height != cfg.height) )
+                            {
+                                return task.reject("Image's size must be "+cfg.width+"x"+cfg.height+"px. Current size is "+img.width+"x"+img.height+"px");
+                            } 
+
+                            task.resolve();
+                        };
+
+                        img.src = fr.result; 
+                    };
+
+                    fr.onerror = function()
+                    {
+                        task.reject("Can't read the file...");
+                    }
+
+                    fr.readAsDataURL( file ); 
+
+                    return promise;
+                }
+
+                //
+                // ON CLICK DELETE
+                //
+                div.find("._delete").on("click", function(){
+                    itm.delete = true;
+                    div.addClass("deleted");
+                });
+
+                //
+                // ON CLICK UNDO DELETE
+                //
+                div.find("._undo").on("click", function(){
+                    itm.delete = false;
+                    div.removeClass("deleted");
+                }); 
+
+                /**
+                 * Decorating the item:
+                 * This method will return either an object or a promise which will be resolved to the same object returned in the first case.
+                 * The goal here is to make sure the data we are obtaining from the UI is valid.
+                 */ 
+                itm.getDataToSave = function( newOrder, config )
+                {  
+                    _showError(false); 
+
+                    //
+                    // Data object that will be "saved"
+                    //
+                    var save    = {
+                        _id : itm._id
+                    };
+
+                    //
+                    // when sending this "save" object, this method will be used to inform us
+                    // if this particular data was saved or not.
+                    //
+                    save.resolve = function( error, result )
+                    {
+                        _showError( error );
+
+                        if( !error )
+                        {
+                            if( result.delete )
+                            { 
+                                div.trigger("listChanged");
+                                div.remove();
+                                return;
+                            }
+                            
+                            //
+                            // Update our internal data based on what was changed.
+                            //
+                            itm._id         = result.$id || result._id;
+                            itm.description = result.description || itm.description;
+                            itm.image       = result.image || itm.image;
+                            itm.order       = result.order || itm.order;
+
+                            _sync();
+                        }
+                    };
+                    
+                    //
+                    // if the items is to be deleted, only send that instruction
+                    // if is not a "new" item ( created recently, not even saved );
+                    //
+                    if( itm.delete )
+                    { 
+                        save.delete = true;
+                        return save._id && isNaN( save._id )? save : null;
+                    }
+
+                    if( newOrder != itm.order )
+                    {
+                        save.order = newOrder;
+                    }
+
+                    if( itm.description != desc.val() )
+                    {
+                        save.description = desc.val();
+
+                        var charsDiff = save.description.length-config.descMaxChars;
+                        if( charsDiff > 0 )
+                        { 
+                            _showError("Description is "+charsDiff+" characters too long.")
+                            return defer.reject().promise();
+                        }
+                    }
+                    
+                    //
+                    // if a file has been selected...
+                    //
+                    if( file[0].files[0] )
+                    {
+                        save.file = file[0].files[0];
+
+                        //
+                        // verify then return...
+                        //
+                        return __validateFile( save.file, config.pic ).then(function(){ 
+                            return save; 
+                        }, _showError );
+                    } 
+
+                    //
+                    // if something has been added/changed... 
+                    // i use "2" because it will always have "_id" and "resolve"
+                    //
+                    return Object.keys(save).length>2 ? save : null;
+                };
+
+                _sync();
+
+                return div;
+            }
+            
+
+            //
+            // Defining global method to add new items to the array
+            //
+            function addNewItem()
+            {
+                window.__newID = window.__newID || 0;   // <-- Lazy init global counter  
+                   
+                $sortable.append( ItemHandler( { _id: --__newID } ) ); // <-- new ID's will have negative numbers
+
+                $sortable.trigger("listChanged");
+            };
+
+            //
+            // "save" entry point, first we valdiate data, then we send.
+            //
+            function save()
+            { 
+                var payload = [];
+
+                //
+                // Iterate over all the list's items and collect the data that needs to be saved.
+                // im doing it with .find > li to that way get the current order in the list.
+                //
+                $sortable.find("> li").each(function(i,itm)
+                {
+                    var save = $(this)[0].data.getDataToSave( i, $config );
+                    if( save )
+                    {
+                        payload.push( save );
+                    }
+                });
+
+
+                if( !payload.length )
+                {
+                    alert("Nothing to save...")
+                    return;  
+                }
+
+                //
+                // when all the data required to be saved is ready...
+                //
+                $.when.apply(null, payload).then(function()
+                {  
+                    var doc = $(document.body);
+
+                    doc.addClass("loading"); 
+
+                    //
+                    // send data to the backend
+                    //
+                    __saveData( Array.prototype.slice.call(arguments), function(err, result)
+                    {
+                        doc.removeClass("loading");
+                        
+                        alert( err || "Data was saved! :)");
+                    }); 
+                    
+                }); 
+                
+            }; 
+              
+            //
+            // actually send the data to the server...
+            //
+            function __saveData( items, callback )
+            {
+                var payload     = new FormData();  
+                var idToItem    = {}; 
+
+
+                //
+                // collect file references ( if any )
+                //
+                items.forEach(function(itm)
+                { 
+                    idToItem[itm._id] = itm; // <--- to find them faster later...
+
+                    if( itm.file )
+                    {
+                        payload.append( itm._id, itm.file );
+                        delete itm.file;
+                    }
+                }); 
+
+
+                //
+                // we send the json data as string.
+                //
+                payload.append("items", JSON.stringify( items ));
+
+
+                //
+                // Send to the server...
+                //
+                $.ajax({
+                    url             : "/",
+                    data            : payload,
+                    processData     : false,
+                    contentType     : false,
+                    type            : 'POST'
+                })
+                
+                .then(function(data)
+                { 
+                    //
+                    // now, inform each item of the resolution
+                    //
+                    data.forEach(function(itm)
+                    { 
+                        idToItem[ itm._id ].resolve( itm.error, itm );
+                    });
+
+                    callback();
+
+                }, function( xhr, textStatus )
+                {
+                    callback( textStatus )
+                });  
+
+            }
+ 
+            /* 
+            ______ _   _ _______ _______     __  _____   ____ _____ _   _ _______ 
+            |  ____| \ | |__   __|  __ \ \   / / |  __ \ / __ \_   _| \ | |__   __|
+            | |__  |  \| |  | |  | |__) \ \_/ /  | |__) | |  | || | |  \| |  | |   
+            |  __| | . ` |  | |  |  _  / \   /   |  ___/| |  | || | | . ` |  | |   
+            | |____| |\  |  | |  | | \ \  | |    | |    | |__| || |_| |\  |  | |   
+            |______|_| \_|  |_|  |_|  \_\ |_|    |_|     \____/_____|_| \_|  |_|                                                            
+
+            */
+            apiCall("/data.json",null, function(err, data)
+            { 
+                $sortable.empty();
+
+                //
+                // If the demo app fails, alert and reload...
+                //
+                if( err ) {
+                    alert( err );
+                    //location.reload();
+                    return;
+                } 
+
+                $(document.body).removeClass("loading");
+
+                //
+                // object containing config info sent by the backend
+                //
+                $config = data.$config;
+
+                //
+                // Adding a handler to each item
+                //
+                data.items.forEach(function(itm)
+                {
+                    $sortable.append( ItemHandler( itm ) ); 
+                }); 
+
+                $sortable.trigger("listChanged");
+            });
+
+        </script>
+    </body>
+</html>

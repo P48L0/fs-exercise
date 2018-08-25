@@ -1,0 +1,20 @@
+version: '2.1'
+
+services:
+  pablo_examen: 
+    restart: always
+    build: .
+    environment:
+      NODE_ENV: production
+      MONGO_SERVICE_NAME: mongo
+    volumes:
+          - ./data/uploads:/usr/src/app/uploads
+    ports:
+      - "8888:8888"
+    links:
+      - mongo 
+  mongo:
+    container_name: mongo
+    image: mongo
+    ports:
+      - "27017:27017"
