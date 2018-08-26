@@ -55,3 +55,4 @@ Since this is not a real life application i went for the faster routes to solves
  - i put the config defining the rules of validation in the index.js in an attempt to allow some type of customization without too much effort, but in real life i would probably had that data loaded on-deman (right now, once you compile that's it, you cant change it )
  - Mongo's port is hardcoded, same as DB name and main collection name... in real life this data would be configurable in some way.
  - repo.js exports method and in itself, acts like a Singleton... in this situaton this was good enough. If i had the need to connect to other collection or other server this wouldn't work and a class based solution would be needed, or Multiton, etc...
+ - More validations, or data integrity checks... im assuming everything send to the server is valid.
