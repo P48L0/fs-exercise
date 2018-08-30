@@ -2,7 +2,7 @@
 
 Welcome to my solution for the **FS Exercise** challenge. To build & run just execute:
 
-    docker-composer up
+    docker-compose up
 
 ( i assume you have [Docker](https://www.docker.com/) installed ) then visit `http://localhost:8888`, or `http://host-ip:8888`, or `http://virtual-machine-ip:8888` (as appropriate). 
 
