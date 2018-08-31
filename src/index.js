@@ -4,8 +4,8 @@
 var $config   = { 
     descMaxChars    : 300
     , pic: { 
-        width       : 300
-        , height    : 300
+        width       : 320
+        , height    : 320
         , types     : ["jpg","gif","png"]
     } 
 };
@@ -117,7 +117,7 @@ app.post('/', function(req, res) {
                             itm.image = file.name;
 
                             //console.log("OLD ITEM!!!", oldItem.image );
-                            
+
                             //
                             // si ya existia...
                             //
