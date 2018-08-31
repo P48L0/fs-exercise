@@ -116,7 +116,8 @@ app.post('/', function(req, res) {
                             //
                             itm.image = file.name;
 
-                            console.log("OLD ITEM!!!", oldItem.image );
+                            //console.log("OLD ITEM!!!", oldItem.image );
+                            
                             //
                             // si ya existia...
                             //
